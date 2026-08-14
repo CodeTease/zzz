@@ -8,6 +8,9 @@ clap = { version = "4", features = ["derive"] }
 indicatif = "0.18"
 humantime = "2.1"
 signal-hook = "0.4"
+crossterm = "0.29"
+chrono = "0.4"
+libc = "0.2"
 
 [profile.release]
 opt-level = "z"
@@ -15,3 +18,4 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
