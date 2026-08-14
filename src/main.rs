@@ -1,5 +1,7 @@
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
+use signal_hook::consts::signal::{SIGINT, SIGTERM};
+use signal_hook::iterator::Signals;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -26,25 +28,35 @@ fn main() {
     let args = Args::parse();
     let total_millis = args.duration.as_millis() as u64;
 
+    let interrupted = Arc::new(AtomicBool::new(false));
+    let interrupted_clone = Arc::clone(&interrupted);
+    let main_thread = thread::current();
+
+    thread::spawn(move || {
+        if let Ok(mut signals) = Signals::new([SIGINT, SIGTERM]) {
+            if signals.forever().next().is_some() {
+                interrupted_clone.store(true, Ordering::SeqCst);
+                main_thread.unpark();
+            }
+        }
+    });
+
     if args.quiet || total_millis == 0 {
-        thread::sleep(args.duration);
+        let start = Instant::now();
+        while start.elapsed() < args.duration {
+            if interrupted.load(Ordering::SeqCst) {
+                return;
+            }
+            let remaining = args.duration.saturating_sub(start.elapsed());
+            thread::park_timeout(remaining);
+        }
         return;
     }
-
-    // Flag to track interruption status on Ctrl+C
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
-
-    // Catch Ctrl+C signals gracefully
-    ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
-    })
-    .expect("Error setting Ctrl+C handler!");
 
     let pb = ProgressBar::new(total_millis);
     pb.set_style(
         ProgressStyle::with_template(
-            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos_ms}/{len_ms} ({eta}) {msg}",
+            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {elapsed}/{duration} ({eta}) {msg}",
         )
         .unwrap()
         .progress_chars("██-"),
@@ -55,7 +67,7 @@ fn main() {
 
     while start.elapsed() < duration {
         // If Ctrl+C was pressed, abort cleanly
-        if !running.load(Ordering::SeqCst) {
+        if interrupted.load(Ordering::SeqCst) {
             pb.abandon_with_message("Cancelled! 🛑");
             return;
         }
@@ -74,11 +86,18 @@ fn main() {
         pb.set_message(status_emoji);
         pb.set_position(std::cmp::min(elapsed_millis, total_millis));
 
-        // Short sleep duration without overshooting the remaining time
+        // Sleep up to 50ms or wake up immediately if signal unparks main thread
         let remaining = duration.saturating_sub(elapsed);
-        thread::sleep(std::cmp::min(Duration::from_millis(50), remaining));
+        let sleep_time = std::cmp::min(Duration::from_millis(50), remaining);
+        thread::park_timeout(sleep_time);
+    }
+
+    if interrupted.load(Ordering::SeqCst) {
+        pb.abandon_with_message("Cancelled! 🛑");
+        return;
     }
 
     pb.set_position(total_millis);
     pb.finish_with_message(args.message);
 }
+
