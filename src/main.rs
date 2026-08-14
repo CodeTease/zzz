@@ -1,8 +1,8 @@
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use signal_hook::iterator::Signals;
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -25,21 +25,28 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let total_millis = args.duration.as_millis() as u64;
+    let total_millis: u64 = args.duration.as_millis().try_into().unwrap_or(u64::MAX);
 
-    let interrupted = Arc::new(AtomicBool::new(false));
-    signal_hook::flag::register(SIGINT, Arc::clone(&interrupted))?;
-    signal_hook::flag::register(SIGTERM, Arc::clone(&interrupted))?;
+    let mut signals = Signals::new([SIGINT, SIGTERM])?;
+    let signal_handle = signals.handle();
+    let (tx, rx) = mpsc::channel();
 
-    if args.quiet || total_millis == 0 {
-        let start = Instant::now();
-        while start.elapsed() < args.duration {
-            if interrupted.load(Ordering::Relaxed) {
-                return Ok(());
+    thread::spawn(move || {
+        for _ in signals.forever() {
+            if tx.send(()).is_err() {
+                break;
             }
-            let remaining = args.duration.saturating_sub(start.elapsed());
-            thread::sleep(std::cmp::min(Duration::from_millis(100), remaining));
         }
+    });
+
+    if total_millis == 0 {
+        signal_handle.close();
+        return Ok(());
+    }
+
+    if args.quiet {
+        let _ = rx.recv_timeout(args.duration);
+        signal_handle.close();
         return Ok(());
     }
 
@@ -54,21 +61,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let start = Instant::now();
     let duration = args.duration;
+    let total_millis_128 = duration.as_millis();
 
     while start.elapsed() < duration {
-        if interrupted.load(Ordering::Relaxed) {
-            pb.abandon_with_message("Cancelled! 🛑");
-            return Ok(());
-        }
-
         let elapsed = start.elapsed();
-        let elapsed_millis = elapsed.as_millis() as u64;
-        let progress_ratio = elapsed.as_secs_f64() / duration.as_secs_f64();
+        let elapsed_millis: u64 = elapsed.as_millis().try_into().unwrap_or(u64::MAX);
+        let elapsed_millis_128 = elapsed.as_millis();
 
-        let status_emoji = match progress_ratio {
-            p if p < 0.25 => "🥱 Yawning...",
-            p if p < 0.75 => "😴 Sleeping soundly...",
-            _ => "😳 Almost awake...",
+        let status_emoji = if elapsed_millis_128 * 4 < total_millis_128 {
+            "🥱 Yawning..."
+        } else if elapsed_millis_128 * 4 < total_millis_128 * 3 {
+            "😴 Sleeping soundly..."
+        } else {
+            "😳 Almost awake..."
         };
 
         pb.set_message(status_emoji);
@@ -76,11 +81,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let remaining = duration.saturating_sub(elapsed);
         let sleep_time = std::cmp::min(Duration::from_millis(50), remaining);
-        thread::sleep(sleep_time);
+
+        if rx.recv_timeout(sleep_time).is_ok() {
+            pb.abandon_with_message("Cancelled! 🛑");
+            signal_handle.close();
+            return Ok(());
+        }
     }
 
     pb.set_position(total_millis);
     pb.finish_with_message(args.message);
+    signal_handle.close();
 
     Ok(())
 }
