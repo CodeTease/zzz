@@ -2,8 +2,6 @@ use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
-use std::sync::mpsc;
-use std::thread;
 use std::time::{Duration, Instant};
 
 #[derive(Parser)]
@@ -27,71 +25,69 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let total_millis: u64 = args.duration.as_millis().try_into().unwrap_or(u64::MAX);
 
-    let mut signals = Signals::new([SIGINT, SIGTERM])?;
-    let signal_handle = signals.handle();
-    let (tx, rx) = mpsc::channel();
-
-    thread::spawn(move || {
-        for _ in signals.forever() {
-            if tx.send(()).is_err() {
-                break;
-            }
-        }
-    });
-
     if total_millis == 0 {
-        signal_handle.close();
         return Ok(());
     }
 
-    if args.quiet {
-        let _ = rx.recv_timeout(args.duration);
-        signal_handle.close();
-        return Ok(());
-    }
+    // Initialize signals
+    let mut signals = Signals::new([SIGINT, SIGTERM])?;
 
-    let pb = ProgressBar::new(total_millis);
-    pb.set_style(
-        ProgressStyle::with_template(
-            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {elapsed}/{duration} ({eta}) {msg}",
-        )
-        .unwrap()
-        .progress_chars("██-"),
-    );
+    let pb = if !args.quiet {
+        let pb = ProgressBar::new(total_millis);
+        pb.set_style(
+            ProgressStyle::with_template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {elapsed}/{duration} ({eta}) {msg}",
+            )?
+            .progress_chars("██-"),
+        );
+        Some(pb)
+    } else {
+        None
+    };
 
     let start = Instant::now();
     let duration = args.duration;
-    let total_millis_128 = duration.as_millis();
 
-    while start.elapsed() < duration {
+    loop {
         let elapsed = start.elapsed();
-        let elapsed_millis: u64 = elapsed.as_millis().try_into().unwrap_or(u64::MAX);
-        let elapsed_millis_128 = elapsed.as_millis();
+        if elapsed >= duration {
+            break; // Sleep period complete
+        }
 
-        let status_emoji = if elapsed_millis_128 * 4 < total_millis_128 {
-            "🥱 Yawning..."
-        } else if elapsed_millis_128 * 4 < total_millis_128 * 3 {
-            "😴 Sleeping soundly..."
-        } else {
-            "😳 Almost awake..."
-        };
-
-        pb.set_message(status_emoji);
-        pb.set_position(std::cmp::min(elapsed_millis, total_millis));
-
-        let remaining = duration.saturating_sub(elapsed);
-        let sleep_time = std::cmp::min(Duration::from_millis(50), remaining);
-
-        if rx.recv_timeout(sleep_time).is_ok() {
-            pb.abandon_with_message("Cancelled! 🛑");
-            signal_handle.close();
+        // 1. Check for incoming SIGINT / SIGTERM (non-blocking)
+        if signals.pending().next().is_some() {
+            if let Some(ref pb) = pb {
+                pb.abandon_with_message("Cancelled! 🛑");
+            }
             return Ok(());
         }
+
+        // 2. Update the UI if a progress bar is present
+        if let Some(ref pb) = pb {
+            let elapsed_millis: u64 = elapsed.as_millis().try_into().unwrap_or(u64::MAX);
+            let ratio = elapsed.as_secs_f64() / duration.as_secs_f64();
+            
+            let status_emoji = if ratio < 0.25 {
+                "🥱 Yawning..."
+            } else if ratio < 0.75 {
+                "😴 Sleeping soundly..."
+            } else {
+                "😳 Almost awake..."
+            };
+
+            pb.set_message(status_emoji);
+            pb.set_position(elapsed_millis);
+        }
+
+        // 3. Brief sleep between UI updates
+        let remaining = duration.saturating_sub(elapsed);
+        std::thread::sleep(std::cmp::min(Duration::from_millis(50), remaining));
     }
 
-    pb.set_position(total_millis);
-    pb.finish_with_message(args.message);
-    signal_handle.close();
+    if let Some(pb) = pb {
+        pb.set_position(total_millis);
+        pb.finish_with_message(args.message);
+    }
 
     Ok(())
 }
