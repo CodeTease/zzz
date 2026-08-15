@@ -140,11 +140,12 @@ pub fn run_sleep_timer(
 
             let time_str = format_duration(effective_elapsed);
             let total_str = format_duration(duration);
+            let status = get_status_frame(ratio);
 
             if pause_start.is_some() {
                 pb.set_message(format!("⏸️ [PAUSED at {}/{}] Press Space/P to resume", time_str, total_str));
             } else {
-                pb.set_message(get_status_frame(ratio));
+                pb.set_message(format!("⏳ [{}/{}] {}", time_str, total_str, status));
             }
             pb.set_position(elapsed_millis);
         } else if raw && !quiet {
