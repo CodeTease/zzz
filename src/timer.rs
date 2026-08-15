@@ -27,6 +27,19 @@ impl Drop for RawModeGuard {
     }
 }
 
+// Helper function to format time nicely (MM:SS or HH:MM:SS)
+fn format_duration(d: Duration) -> String {
+    let total_secs = d.as_secs();
+    let hours = total_secs / 3600;
+    let mins = (total_secs % 3600) / 60;
+    let secs = total_secs % 60;
+    if hours > 0 {
+        format!("{:02}:{:02}:{:02}", hours, mins, secs)
+    } else {
+        format!("{:02}:{:02}", mins, secs)
+    }
+}
+
 pub fn run_sleep_timer(
     duration: Duration,
     quiet: bool,
@@ -129,12 +142,23 @@ pub fn run_sleep_timer(
             let elapsed_millis: u64 = effective_elapsed.as_millis().try_into().unwrap_or(u64::MAX);
             let ratio = effective_elapsed.as_secs_f64() / duration.as_secs_f64();
 
+            let time_str = format_duration(effective_elapsed);
+            let total_str = format_duration(duration);
+
             if pause_start.is_some() {
-                pb.set_message("⏸️ Paused (Press Space/P to resume)");
+                // UI frozen, the time has clearly stopped
+                pb.set_message(format!("⏸️ [PAUSED at {}/{}] Press Space/P to resume", time_str, total_str));
+
+                // Hacky: Reset the position so the bar stays in place
+                let elapsed_millis: u64 = effective_elapsed.as_millis().try_into().unwrap_or(u64::MAX);
+                pb.set_position(elapsed_millis);
             } else {
                 pb.set_message(get_status_frame(ratio));
             }
             pb.set_position(elapsed_millis);
+
+            // Sleep briefly while waiting for an event/signal to resume, avoid wasting CPU cycles
+            std::thread::sleep(Duration::from_millis(50));
         }
 
         let remaining = duration.saturating_sub(effective_elapsed);

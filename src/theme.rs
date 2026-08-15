@@ -5,11 +5,11 @@ pub fn create_progress_bar(total_millis: u64, theme: &Theme) -> Result<ProgressB
     let pb = ProgressBar::new(total_millis);
     let style = match theme {
         Theme::Classic => ProgressStyle::with_template(
-            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {elapsed}/{duration} ({eta}) {msg}",
+            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {msg}",
         )?
         .progress_chars("██-"),
         Theme::Cat => ProgressStyle::with_template(
-            "{spinner} [{elapsed_precise}] [{bar:40.magenta/white}] {elapsed}/{duration} ({eta}) {msg}",
+            "{spinner} [{elapsed_precise}] [{bar:40.magenta/white}] {msg}",
         )?
         .tick_strings(&[
             "ฅ^•ﻌ•^ฅ 🧶 ",
@@ -21,17 +21,17 @@ pub fn create_progress_bar(total_millis: u64, theme: &Theme) -> Result<ProgressB
         ])
         .progress_chars("=#-"),
         Theme::Moon => ProgressStyle::with_template(
-            "{spinner} [{elapsed_precise}] [{bar:40.yellow/blue}] {elapsed}/{duration} ({eta}) {msg}",
+            "{spinner} [{elapsed_precise}] [{bar:40.yellow/blue}] {msg}",
         )?
         .tick_strings(&["🌑 ", "🌒 ", "🌓 ", "🌔 ", "🌕 ", "🌖 ", "🌗 ", "🌘 "])
         .progress_chars("█>-"),
         Theme::Pixel => ProgressStyle::with_template(
-            "{spinner:.green} [{elapsed_precise}] [{bar:40.green/black}] {elapsed}/{duration} ({eta}) {msg}",
+            "{spinner:.green} [{elapsed_precise}] [{bar:40.green/black}] {msg}",
         )?
         .tick_strings(&["👾 ", "🕹️ ", "🎮 ", "👾 "])
         .progress_chars("▓▒░"),
         Theme::Matrix => ProgressStyle::with_template(
-            "{spinner:.green} [{elapsed_precise}] [{bar:40.green/dim}] {elapsed}/{duration} ({eta}) {msg}",
+            "{spinner:.green} [{elapsed_precise}] [{bar:40.green/dim}] {msg}",
         )?
         .tick_strings(&["0101 ", "1010 ", "0011 ", "1100 ", "1001 "])
         .progress_chars("█▓▒"),
