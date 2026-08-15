@@ -796,6 +796,5 @@ dependencies = [
  "crossterm",
  "humantime",
  "indicatif",
- "libc",
  "signal-hook 0.4.4",
 ]

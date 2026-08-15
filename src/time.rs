@@ -1,7 +1,8 @@
+use crate::error::ZzzError;
 use chrono::{Duration as ChronoDuration, Local, NaiveTime};
 use std::time::Duration;
 
-pub fn parse_until_target(input: &str) -> Result<Duration, String> {
+pub fn parse_until_target(input: &str) -> Result<Duration, ZzzError> {
     let now = Local::now();
     let s = input.trim().to_lowercase();
 
@@ -13,7 +14,7 @@ pub fn parse_until_target(input: &str) -> Result<Duration, String> {
         (false, s.as_str())
     };
 
-    let target_time = parse_time_str(time_str)?;
+    let target_time = parse_time_str(time_str).map_err(ZzzError::InvalidTimeFormat)?;
 
     let mut target_datetime = now.date_naive().and_time(target_time);
 
@@ -112,5 +113,40 @@ mod tests {
     fn test_parse_until_target() {
         assert!(parse_until_target("23:59").is_ok());
         assert!(parse_until_target("tomorrow-8am").is_ok());
+    }
+
+    #[test]
+    fn test_parse_until_target_few_seconds_ahead() {
+        let now = Local::now();
+        let target = now + ChronoDuration::seconds(5);
+        let time_str = target.format("%H:%M:%S").to_string();
+        let dur = parse_until_target(&time_str).unwrap();
+        assert!(dur <= Duration::from_secs(6));
+        assert!(dur >= Duration::from_millis(100));
+    }
+
+    #[test]
+    fn test_parse_until_target_past_time_rolls_over_to_tomorrow() {
+        let now = Local::now();
+        let target = now - ChronoDuration::seconds(10);
+        let time_str = target.format("%H:%M:%S").to_string();
+        let dur = parse_until_target(&time_str).unwrap();
+        // Should be approx 24 hours minus 10 seconds (~86390 seconds)
+        assert!(dur > Duration::from_secs(86000));
+        assert!(dur <= Duration::from_secs(86400));
+    }
+
+    #[test]
+    fn test_parse_until_target_midnight_boundaries() {
+        assert!(parse_until_target("00:00").is_ok());
+        assert!(parse_until_target("23:59:59").is_ok());
+        assert!(parse_until_target("tomorrow-00:00").is_ok());
+        assert!(parse_until_target("tomorrow-23:59:59").is_ok());
+    }
+
+    #[test]
+    fn test_parse_until_target_invalid_format() {
+        let res = parse_until_target("invalid_time_str");
+        assert!(matches!(res, Err(ZzzError::InvalidTimeFormat(_))));
     }
 }

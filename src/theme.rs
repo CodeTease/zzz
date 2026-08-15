@@ -1,7 +1,8 @@
 use crate::cli::Theme;
+use crate::error::ZzzError;
 use indicatif::{ProgressBar, ProgressStyle};
 
-pub fn create_progress_bar(total_millis: u64, theme: &Theme) -> Result<ProgressBar, Box<dyn std::error::Error>> {
+pub fn create_progress_bar(total_millis: u64, theme: &Theme) -> Result<ProgressBar, ZzzError> {
     let pb = ProgressBar::new(total_millis);
     let style = match theme {
         Theme::Classic => ProgressStyle::with_template(

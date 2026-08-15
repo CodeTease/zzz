@@ -1,4 +1,5 @@
 use crate::cli::{Args, Theme};
+use crate::error::ZzzError;
 use crate::process::is_process_running;
 use crate::theme::{create_progress_bar, get_status_frame};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
@@ -13,8 +14,12 @@ pub struct RawModeGuard {
 }
 
 impl RawModeGuard {
-    pub fn new() -> Self {
-        let active = terminal::enable_raw_mode().is_ok();
+    pub fn new(no_interaction: bool) -> Self {
+        let active = if no_interaction {
+            false
+        } else {
+            terminal::enable_raw_mode().is_ok()
+        };
         Self { active }
     }
 }
@@ -47,15 +52,92 @@ pub enum TimerOutcome {
     WatchedProcessTerminated,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum KeyAction {
+    Cancel,
+    TogglePause,
+    AddStep,
+    SubStep,
+    Skip,
+    Reset,
+}
+
+fn handle_key_input(poll_timeout: Duration) -> Result<(bool, Option<KeyAction>), ZzzError> {
+    if event::poll(poll_timeout)? {
+        let mut last_action = None;
+        while let Ok(true) = event::poll(Duration::from_millis(0)) {
+            if let Ok(Event::Key(key_event)) = event::read() {
+                if key_event.code == KeyCode::Char('c')
+                    && key_event.modifiers.contains(KeyModifiers::CONTROL)
+                {
+                    return Ok((true, Some(KeyAction::Cancel)));
+                }
+
+                let action = match key_event.code {
+                    KeyCode::Char(' ') | KeyCode::Char('p') | KeyCode::Char('P') => Some(KeyAction::TogglePause),
+                    KeyCode::Char('+') | KeyCode::Char('=') => Some(KeyAction::AddStep),
+                    KeyCode::Char('-') | KeyCode::Char('_') => Some(KeyAction::SubStep),
+                    KeyCode::Char('s') | KeyCode::Char('S') => Some(KeyAction::Skip),
+                    KeyCode::Char('r') | KeyCode::Char('R') => Some(KeyAction::Reset),
+                    _ => None,
+                };
+
+                if action.is_some() {
+                    last_action = action;
+                }
+            }
+        }
+        Ok((true, last_action))
+    } else {
+        Ok((false, None))
+    }
+}
+
+fn update_ui(
+    pb: Option<&indicatif::ProgressBar>,
+    raw: bool,
+    quiet: bool,
+    effective_elapsed: Duration,
+    duration: Duration,
+    remaining: Duration,
+    is_paused: bool,
+) {
+    if let Some(pb) = pb {
+        let elapsed_millis: u64 = effective_elapsed.as_millis().try_into().unwrap_or(u64::MAX);
+        let ratio = if duration.as_secs_f64() > 0.0 {
+            effective_elapsed.as_secs_f64() / duration.as_secs_f64()
+        } else {
+            1.0
+        };
+
+        let time_str = format_duration(effective_elapsed);
+        let total_str = format_duration(duration);
+        let status = get_status_frame(ratio);
+
+        if is_paused {
+            pb.set_message(format!("⏸️ [PAUSED at {}/{}] Press Space/P to resume", time_str, total_str));
+        } else {
+            pb.set_message(format!("⏳ [{}/{}] {}", time_str, total_str, status));
+        }
+        pb.set_position(elapsed_millis);
+    } else if raw && !quiet {
+        let time_str = format_duration(remaining);
+        print!("\r{:10}", time_str);
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+    }
+}
+
 pub fn run_sleep_timer(
     mut duration: Duration,
     quiet: bool,
     raw: bool,
+    no_interaction: bool,
     theme: &Theme,
     watch_pid: Option<u32>,
     completion_message: &str,
     step: Duration,
-) -> Result<TimerOutcome, Box<dyn std::error::Error>> {
+) -> Result<TimerOutcome, ZzzError> {
     if duration.as_millis() == 0 {
         if raw && !quiet {
             println!("{:10}", format_duration(Duration::ZERO));
@@ -72,7 +154,7 @@ pub fn run_sleep_timer(
         None
     };
 
-    let raw_mode_guard = RawModeGuard::new();
+    let raw_mode_guard = RawModeGuard::new(no_interaction);
 
     let mut start = Instant::now();
     let mut paused_accum = Duration::ZERO;
@@ -130,88 +212,67 @@ pub fn run_sleep_timer(
         }
 
         // Update UI
-        if let Some(ref pb) = pb {
-            let elapsed_millis: u64 = effective_elapsed.as_millis().try_into().unwrap_or(u64::MAX);
-            let ratio = if duration.as_secs_f64() > 0.0 {
-                effective_elapsed.as_secs_f64() / duration.as_secs_f64()
-            } else {
-                1.0
-            };
-
-            let time_str = format_duration(effective_elapsed);
-            let total_str = format_duration(duration);
-            let status = get_status_frame(ratio);
-
-            if pause_start.is_some() {
-                pb.set_message(format!("⏸️ [PAUSED at {}/{}] Press Space/P to resume", time_str, total_str));
-            } else {
-                pb.set_message(format!("⏳ [{}/{}] {}", time_str, total_str, status));
-            }
-            pb.set_position(elapsed_millis);
-        } else if raw && !quiet {
-            let time_str = format_duration(remaining);
-            print!("\r{:10}", time_str);
-            use std::io::Write;
-            let _ = std::io::stdout().flush();
-        }
+        update_ui(
+            pb.as_ref(),
+            raw,
+            quiet,
+            effective_elapsed,
+            duration,
+            remaining,
+            pause_start.is_some(),
+        );
 
         let poll_timeout = std::cmp::min(Duration::from_millis(100), remaining);
 
         let mut key_event_occurred = false;
         if raw_mode_guard.active {
-            if event::poll(poll_timeout)? {
-                key_event_occurred = true;
-                while let Ok(true) = event::poll(Duration::from_millis(0)) {
-                    if let Ok(Event::Key(key_event)) = event::read() {
-                        if key_event.code == KeyCode::Char('c')
-                            && key_event.modifiers.contains(KeyModifiers::CONTROL)
-                        {
-                            if let Some(ref pb) = pb {
-                                pb.abandon_with_message("Cancelled! 🛑");
-                            } else if raw && !quiet {
-                                eprintln!("\nCancelled! 🛑");
-                            }
-                            return Ok(TimerOutcome::Interrupted);
-                        }
+            let (occurred, action) = handle_key_input(poll_timeout)?;
+            key_event_occurred = occurred;
 
-                        match key_event.code {
-                            KeyCode::Char(' ') | KeyCode::Char('p') | KeyCode::Char('P') => {
-                                if let Some(p_start) = pause_start {
-                                    paused_accum += p_start.elapsed();
-                                    pause_start = None;
-                                } else {
-                                    pause_start = Some(Instant::now());
-                                }
-                            }
-                            KeyCode::Char('+') | KeyCode::Char('=') => {
-                                duration = duration.saturating_add(step);
-                                if let Some(ref pb) = pb {
-                                    pb.set_length(duration.as_millis().try_into().unwrap_or(u64::MAX));
-                                }
-                            }
-                            KeyCode::Char('-') | KeyCode::Char('_') => {
-                                duration = duration.saturating_sub(step);
-                                if let Some(ref pb) = pb {
-                                    pb.set_length(duration.as_millis().try_into().unwrap_or(u64::MAX));
-                                }
-                            }
-                            KeyCode::Char('s') | KeyCode::Char('S') => {
-                                if let Some(ref pb) = pb {
-                                    pb.finish_with_message("Skipped!");
-                                } else if raw && !quiet {
-                                    println!("\r{:10}", format_duration(Duration::ZERO));
-                                }
-                                return Ok(TimerOutcome::Completed);
-                            }
-                            KeyCode::Char('r') | KeyCode::Char('R') => {
-                                start = Instant::now();
-                                paused_accum = Duration::ZERO;
-                                pause_start = None;
-                                if let Some(ref pb) = pb {
-                                    pb.set_position(0);
-                                }
-                            }
-                            _ => {}
+            if let Some(act) = action {
+                match act {
+                    KeyAction::Cancel => {
+                        if let Some(ref pb) = pb {
+                            pb.abandon_with_message("Cancelled! 🛑");
+                        } else if raw && !quiet {
+                            eprintln!("\nCancelled! 🛑");
+                        }
+                        return Ok(TimerOutcome::Interrupted);
+                    }
+                    KeyAction::TogglePause => {
+                        if let Some(p_start) = pause_start {
+                            paused_accum += p_start.elapsed();
+                            pause_start = None;
+                        } else {
+                            pause_start = Some(Instant::now());
+                        }
+                    }
+                    KeyAction::AddStep => {
+                        duration = duration.saturating_add(step);
+                        if let Some(ref pb) = pb {
+                            pb.set_length(duration.as_millis().try_into().unwrap_or(u64::MAX));
+                        }
+                    }
+                    KeyAction::SubStep => {
+                        duration = duration.saturating_sub(step);
+                        if let Some(ref pb) = pb {
+                            pb.set_length(duration.as_millis().try_into().unwrap_or(u64::MAX));
+                        }
+                    }
+                    KeyAction::Skip => {
+                        if let Some(ref pb) = pb {
+                            pb.finish_with_message("Skipped!");
+                        } else if raw && !quiet {
+                            println!("\r{:10}", format_duration(Duration::ZERO));
+                        }
+                        return Ok(TimerOutcome::Completed);
+                    }
+                    KeyAction::Reset => {
+                        start = Instant::now();
+                        paused_accum = Duration::ZERO;
+                        pause_start = None;
+                        if let Some(ref pb) = pb {
+                            pb.set_position(0);
                         }
                     }
                 }
@@ -234,48 +295,72 @@ pub fn run_sleep_timer(
     Ok(TimerOutcome::Completed)
 }
 
-pub fn run_pomo_mode(args: &Args) -> Result<TimerOutcome, Box<dyn std::error::Error>> {
-    let mut cycle = 1;
-    loop {
-        let work_msg = format!("🍅 Pomodoro Cycle {}: Work finished!", cycle);
-        if !args.raw && !args.quiet {
-            println!("🍅 Starting Pomodoro Cycle {} Work phase ({:?})...", cycle, args.pomo_work);
-        }
-        let outcome = run_sleep_timer(
-            args.pomo_work,
-            args.quiet,
-            args.raw,
-            &args.theme,
-            args.watch,
-            &work_msg,
-            args.step,
-        )?;
-        if outcome != TimerOutcome::Completed {
-            return Ok(outcome);
-        }
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum PomoState {
+    Work(u32),
+    ShortBreak(u32),
+}
 
-        let break_msg = format!("☕ Pomodoro Cycle {}: Break finished!", cycle);
-        if !args.raw && !args.quiet {
-            println!("☕ Starting Pomodoro Cycle {} Break phase ({:?})...", cycle, args.pomo_break);
+impl PomoState {
+    pub fn next(self) -> Self {
+        match self {
+            PomoState::Work(cycle) => PomoState::ShortBreak(cycle),
+            PomoState::ShortBreak(cycle) => PomoState::Work(cycle + 1),
         }
-        let outcome = run_sleep_timer(
-            args.pomo_break,
-            args.quiet,
-            args.raw,
-            &args.theme,
-            args.watch,
-            &break_msg,
-            args.step,
-        )?;
-        if outcome != TimerOutcome::Completed {
-            return Ok(outcome);
-        }
+    }
 
-        cycle += 1;
+    pub fn duration(&self, args: &Args) -> Duration {
+        match self {
+            PomoState::Work(_) => args.pomo_work,
+            PomoState::ShortBreak(_) => args.pomo_break,
+        }
+    }
+
+    pub fn completion_message(&self) -> String {
+        match self {
+            PomoState::Work(cycle) => format!("🍅 Pomodoro Cycle {}: Work finished!", cycle),
+            PomoState::ShortBreak(cycle) => format!("☕ Pomodoro Cycle {}: Break finished!", cycle),
+        }
+    }
+
+    pub fn announce(&self, args: &Args) {
+        if !args.raw && !args.quiet {
+            match self {
+                PomoState::Work(cycle) => {
+                    println!("🍅 Starting Pomodoro Cycle {} Work phase ({:?})...", cycle, args.pomo_work);
+                }
+                PomoState::ShortBreak(cycle) => {
+                    println!("☕ Starting Pomodoro Cycle {} Break phase ({:?})...", cycle, args.pomo_break);
+                }
+            }
+        }
     }
 }
 
-pub fn execute_command(cmd_str: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_pomo_mode(args: &Args) -> Result<TimerOutcome, ZzzError> {
+    let mut state = PomoState::Work(1);
+    loop {
+        state.announce(args);
+        let outcome = run_sleep_timer(
+            state.duration(args),
+            args.quiet,
+            args.raw,
+            args.no_interaction,
+            &args.theme,
+            args.watch,
+            &state.completion_message(),
+            args.step,
+        )?;
+
+        if outcome != TimerOutcome::Completed {
+            return Ok(outcome);
+        }
+
+        state = state.next();
+    }
+}
+
+pub fn execute_command(cmd_str: &str) -> Result<(), ZzzError> {
     println!("Executing command: {}", cmd_str);
     #[cfg(unix)]
     let status = Command::new("sh").arg("-c").arg(cmd_str).status()?;
@@ -299,6 +384,7 @@ mod tests {
             Duration::from_millis(100),
             true,
             false,
+            true,
             &Theme::Classic,
             None,
             "Done",
@@ -308,11 +394,23 @@ mod tests {
     }
 
     #[test]
+    fn test_pomo_state_transitions() {
+        let state = PomoState::Work(1);
+        assert_eq!(state.completion_message(), "🍅 Pomodoro Cycle 1: Work finished!");
+        let next_state = state.next();
+        assert_eq!(next_state, PomoState::ShortBreak(1));
+        assert_eq!(next_state.completion_message(), "☕ Pomodoro Cycle 1: Break finished!");
+        let next_work = next_state.next();
+        assert_eq!(next_work, PomoState::Work(2));
+    }
+
+    #[test]
     fn test_run_sleep_timer_watched_dead_pid() {
         let res = run_sleep_timer(
             Duration::from_secs(10),
             true,
             false,
+            true,
             &Theme::Classic,
             Some(999999),
             "Done",

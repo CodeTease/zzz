@@ -61,6 +61,10 @@ pub struct Args {
     /// Output only the time in a concise format
     #[arg(long)]
     pub raw: bool,
+
+    /// Disable keyboard interaction and terminal raw mode (for scripts/CI/cron)
+    #[arg(long)]
+    pub no_interaction: bool,
 }
 
 #[cfg(test)]
@@ -82,6 +86,9 @@ mod tests {
         let raw_step_args = Args::try_parse_from(&["zzz", "10s", "--raw", "--step", "1m"]).unwrap();
         assert!(raw_step_args.raw);
         assert_eq!(raw_step_args.step, Duration::from_secs(60));
+
+        let no_interaction_args = Args::try_parse_from(&["zzz", "10s", "--no-interaction"]).unwrap();
+        assert!(no_interaction_args.no_interaction);
     }
 }
 
