@@ -53,6 +53,14 @@ pub struct Args {
     /// Custom message displayed upon completion
     #[arg(short, long, default_value = "Woke up! 🚀")]
     pub message: String,
+
+    /// Step duration for adjusting time during timer (+/- keys, default: 30s)
+    #[arg(long, default_value = "30s", value_parser = humantime::parse_duration)]
+    pub step: Duration,
+
+    /// Output only the time in a concise format
+    #[arg(long)]
+    pub raw: bool,
 }
 
 #[cfg(test)]
@@ -65,8 +73,15 @@ mod tests {
         assert_eq!(args.duration, Some(Duration::from_secs(5)));
         assert_eq!(args.theme, Theme::Cat);
         assert_eq!(args.then, Some("echo hello".to_string()));
+        assert_eq!(args.step, Duration::from_secs(30));
+        assert!(!args.raw);
 
         let exec_alias_args = Args::try_parse_from(&["zzz", "10s", "--exec", "ls"]).unwrap();
         assert_eq!(exec_alias_args.then, Some("ls".to_string()));
+
+        let raw_step_args = Args::try_parse_from(&["zzz", "10s", "--raw", "--step", "1m"]).unwrap();
+        assert!(raw_step_args.raw);
+        assert_eq!(raw_step_args.step, Duration::from_secs(60));
     }
 }
+
