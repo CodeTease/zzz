@@ -12,6 +12,7 @@ pub enum Theme {
 
 #[derive(Parser, Debug)]
 #[command(name = "zzz")]
+#[command(version)]
 #[command(about = "A fancy sleep command written in Rust 💤", long_about = None)]
 pub struct Args {
     /// Sleep duration (e.g., 5s, 1.5m, 2h)
@@ -74,7 +75,8 @@ mod tests {
     #[test]
     fn test_cli_parsing() {
         let _guard = TEST_MUTEX.lock().unwrap();
-        let args = Args::try_parse_from(&["zzz", "5s", "--theme", "cat", "--then", "echo hello"]).unwrap();
+        let args =
+            Args::try_parse_from(&["zzz", "5s", "--theme", "cat", "--then", "echo hello"]).unwrap();
         assert_eq!(args.duration, Some(Duration::from_secs(5)));
         assert_eq!(args.theme, Theme::Cat);
         assert_eq!(args.then, Some("echo hello".to_string()));
@@ -88,7 +90,8 @@ mod tests {
         assert!(raw_step_args.raw);
         assert_eq!(raw_step_args.step, Duration::from_secs(60));
 
-        let no_interaction_args = Args::try_parse_from(&["zzz", "10s", "--no-interaction"]).unwrap();
+        let no_interaction_args =
+            Args::try_parse_from(&["zzz", "10s", "--no-interaction"]).unwrap();
         assert!(no_interaction_args.no_interaction);
     }
 
@@ -131,4 +134,3 @@ mod tests {
         assert_eq!(args.pomo_break, Duration::from_secs(10 * 60));
     }
 }
-
