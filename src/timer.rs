@@ -4,10 +4,27 @@ use crate::process::is_process_running;
 use crate::theme::{create_progress_bar, get_status_frame};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::terminal;
+#[cfg(unix)]
 use signal_hook::consts::signal::{SIGCONT, SIGINT, SIGTERM, SIGTSTP};
+#[cfg(unix)]
 use signal_hook::iterator::Signals;
 use std::process::Command;
+#[cfg(not(unix))]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+#[cfg(not(unix))]
+static CTRL_C_INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(not(unix))]
+fn setup_ctrlc_handler() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        let _ = ctrlc::set_handler(move || {
+            CTRL_C_INTERRUPTED.store(true, Ordering::SeqCst);
+        });
+    });
+}
 
 pub struct RawModeGuard {
     pub active: bool,
@@ -157,7 +174,14 @@ pub fn run_sleep_timer(
         return Ok(TimerOutcome::Completed);
     }
 
+    #[cfg(unix)]
     let mut signals = Signals::new([SIGINT, SIGTERM, SIGTSTP, SIGCONT])?;
+
+    #[cfg(not(unix))]
+    {
+        setup_ctrlc_handler();
+        CTRL_C_INTERRUPTED.store(false, Ordering::SeqCst);
+    }
 
     let pb = if !quiet && !raw {
         let total_millis: u64 = duration.as_millis().try_into().unwrap_or(u64::MAX);
@@ -206,6 +230,7 @@ pub fn run_sleep_timer(
         }
 
         // Handle unix signals
+        #[cfg(unix)]
         for sig in signals.pending() {
             match sig {
                 SIGINT | SIGTERM => {
@@ -228,6 +253,19 @@ pub fn run_sleep_timer(
                     }
                 }
                 _ => {}
+            }
+        }
+
+        // Handle non-unix signals
+        #[cfg(not(unix))]
+        {
+            if CTRL_C_INTERRUPTED.swap(false, Ordering::SeqCst) {
+                if let Some(ref pb) = pb {
+                    pb.abandon_with_message("Cancelled! 🛑");
+                } else if raw && !quiet {
+                    eprintln!("\nCancelled! 🛑");
+                }
+                return Ok(TimerOutcome::Interrupted);
             }
         }
 
@@ -404,13 +442,42 @@ pub fn run_pomo_mode(args: &Args) -> Result<TimerOutcome, ZzzError> {
     }
 }
 
-pub fn execute_command(cmd_str: &str) -> Result<(), ZzzError> {
-    println!("Executing command: {}", cmd_str);
+pub fn resolve_shell_and_flag(shell_env: Option<&str>) -> (&str, &str) {
+    let shell_var = shell_env.filter(|s| !s.trim().is_empty());
+
     #[cfg(unix)]
-    let status = Command::new("sh").arg("-c").arg(cmd_str).status()?;
+    {
+        match shell_var {
+            Some(s) => (s, "-c"),
+            None => ("sh", "-c"),
+        }
+    }
 
     #[cfg(not(unix))]
-    let status = Command::new("cmd").arg("/C").arg(cmd_str).status()?;
+    {
+        match shell_var {
+            Some(s) => {
+                let lower = s.to_lowercase();
+                if lower.ends_with("cmd") || lower.ends_with("cmd.exe") {
+                    (s, "/C")
+                } else if lower.contains("powershell") || lower.contains("pwsh") {
+                    (s, "-Command")
+                } else {
+                    (s, "-c")
+                }
+            }
+            None => ("cmd", "/C"),
+        }
+    }
+}
+
+pub fn execute_command(cmd_str: &str) -> Result<(), ZzzError> {
+    println!("Executing command: {}", cmd_str);
+
+    let shell_env = std::env::var("SHELL").ok();
+    let (shell, arg_flag) = resolve_shell_and_flag(shell_env.as_deref());
+
+    let status = Command::new(shell).arg(arg_flag).arg(cmd_str).status()?;
 
     if !status.success() {
         eprintln!("Command exited with status: {}", status);
@@ -480,5 +547,28 @@ mod tests {
     fn test_raw_mode_guard_creation() {
         let guard = RawModeGuard::new(true);
         assert!(!guard.active);
+    }
+
+    #[test]
+    fn test_resolve_shell_and_flag() {
+        #[cfg(unix)]
+        {
+            assert_eq!(resolve_shell_and_flag(None), ("sh", "-c"));
+            assert_eq!(resolve_shell_and_flag(Some("/bin/zsh")), ("/bin/zsh", "-c"));
+            assert_eq!(resolve_shell_and_flag(Some("")), ("sh", "-c"));
+        }
+
+        #[cfg(not(unix))]
+        {
+            assert_eq!(resolve_shell_and_flag(None), ("cmd", "/C"));
+            assert_eq!(
+                resolve_shell_and_flag(Some("powershell.exe")),
+                ("powershell.exe", "-Command")
+            );
+            assert_eq!(resolve_shell_and_flag(Some("pwsh")), ("pwsh", "-Command"));
+            assert_eq!(resolve_shell_and_flag(Some("cmd.exe")), ("cmd.exe", "/C"));
+            assert_eq!(resolve_shell_and_flag(Some("bash")), ("bash", "-c"));
+            assert_eq!(resolve_shell_and_flag(Some("")), ("cmd", "/C"));
+        }
     }
 }

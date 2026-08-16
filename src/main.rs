@@ -9,14 +9,37 @@ use clap::Parser;
 use cli::Args;
 use error::ZzzError;
 use time::parse_until_target;
-use timer::{execute_command, run_pomo_mode, run_sleep_timer, TimerOutcome};
+use timer::{TimerOutcome, execute_command, run_pomo_mode, run_sleep_timer};
 
 #[cfg(unix)]
 fn is_background() -> bool {
     unsafe { libc::tcgetpgrp(libc::STDIN_FILENO) != libc::getpgrp() }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn is_background() -> bool {
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Console::{
+        GetConsoleMode, GetConsoleWindow, GetStdHandle, STD_INPUT_HANDLE,
+    };
+
+    unsafe {
+        let handle = GetStdHandle(STD_INPUT_HANDLE);
+        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+            return true;
+        }
+        let mut mode = 0;
+        if GetConsoleMode(handle, &mut mode) == 0 {
+            return true;
+        }
+        if GetConsoleWindow().is_null() {
+            return true;
+        }
+        false
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 fn is_background() -> bool {
     false
 }
@@ -38,7 +61,9 @@ fn main() -> Result<(), ZzzError> {
         } else if let Some(ref until_str) = args.until {
             parse_until_target(until_str)?
         } else {
-            eprintln!("Error: Please specify a duration (e.g. `zzz 10s`), `--until <TIME>`, or `--pomo`.");
+            eprintln!(
+                "Error: Please specify a duration (e.g. `zzz 10s`), `--until <TIME>`, or `--pomo`."
+            );
             std::process::exit(1);
         };
 
@@ -67,5 +92,15 @@ fn main() -> Result<(), ZzzError> {
         TimerOutcome::WatchedProcessTerminated => {
             std::process::exit(2);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_background_callable() {
+        let _ = is_background();
     }
 }
