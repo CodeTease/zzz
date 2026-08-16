@@ -3,7 +3,7 @@ use crate::error::ZzzError;
 use indicatif::{ProgressBar, ProgressStyle};
 
 fn is_no_color() -> bool {
-    std::env::var_os("NO_COLOR").map_or(false, |val| !val.is_empty())
+    std::env::var_os("NO_COLOR").is_some_and(|val| !val.is_empty())
 }
 
 pub fn create_progress_bar(total_millis: u64, theme: &Theme) -> Result<ProgressBar, ZzzError> {

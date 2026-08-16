@@ -214,8 +214,8 @@ pub fn run_sleep_timer(
         let remaining = duration.saturating_sub(effective_elapsed);
 
         // Check watched PID
-        if let Some(pid) = watch_pid {
-            if !is_process_running(pid) {
+        if let Some(pid) = watch_pid
+            && !is_process_running(pid) {
                 if let Some(ref pb) = pb {
                     pb.finish_with_message(format!(
                         "Watched process PID {} terminated. Exiting!",
@@ -226,7 +226,6 @@ pub fn run_sleep_timer(
                 }
                 return Ok(TimerOutcome::WatchedProcessTerminated);
             }
-        }
 
         // Handle unix signals
         #[cfg(unix)]
@@ -269,11 +268,10 @@ pub fn run_sleep_timer(
         }
 
         // Check flash message expiry (1.5 seconds)
-        if let Some((_, created_at)) = flash_message {
-            if created_at.elapsed() >= Duration::from_millis(1500) {
+        if let Some((_, created_at)) = flash_message
+            && created_at.elapsed() >= Duration::from_millis(1500) {
                 flash_message = None;
             }
-        }
 
         let flash_text = flash_message.as_ref().map(|(msg, _)| msg.as_str());
 

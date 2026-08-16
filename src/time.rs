@@ -45,19 +45,28 @@ fn parse_time_str(s: &str) -> Result<NaiveTime, String> {
     }
 
     let upper = s_clean.to_uppercase();
-    if let Some(rest) = upper.strip_suffix("AM").or_else(|| upper.strip_suffix("PM")) {
+    if let Some(rest) = upper
+        .strip_suffix("AM")
+        .or_else(|| upper.strip_suffix("PM"))
+    {
         let is_pm = upper.ends_with("PM");
         let parts: Vec<&str> = rest.trim().split(':').collect();
-        let hour: u32 = parts.get(0).and_then(|h| h.trim().parse().ok()).ok_or_else(|| {
-            format!("Invalid hour in time string: '{}'", s_clean)
-        })?;
+        let hour: u32 = parts.first()
+            .and_then(|h| h.trim().parse().ok())
+            .ok_or_else(|| format!("Invalid hour in time string: '{}'", s_clean))?;
         let minute: u32 = if parts.len() > 1 {
-            parts[1].trim().parse().map_err(|_| format!("Invalid minute in time string: '{}'", s_clean))?
+            parts[1]
+                .trim()
+                .parse()
+                .map_err(|_| format!("Invalid minute in time string: '{}'", s_clean))?
         } else {
             0
         };
         let second: u32 = if parts.len() > 2 {
-            parts[2].trim().parse().map_err(|_| format!("Invalid second in time string: '{}'", s_clean))?
+            parts[2]
+                .trim()
+                .parse()
+                .map_err(|_| format!("Invalid second in time string: '{}'", s_clean))?
         } else {
             0
         };
