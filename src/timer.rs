@@ -17,8 +17,11 @@ impl RawModeGuard {
     pub fn new(no_interaction: bool) -> Self {
         let active = if no_interaction {
             false
+        } else if terminal::enable_raw_mode().is_ok() {
+            let _ = crossterm::execute!(std::io::stdout(), crossterm::cursor::Hide);
+            true
         } else {
-            terminal::enable_raw_mode().is_ok()
+            false
         };
         Self { active }
     }
@@ -27,6 +30,7 @@ impl RawModeGuard {
 impl Drop for RawModeGuard {
     fn drop(&mut self) {
         if self.active {
+            let _ = crossterm::execute!(std::io::stdout(), crossterm::cursor::Show);
             let _ = terminal::disable_raw_mode();
         }
     }
@@ -74,7 +78,9 @@ fn handle_key_input(poll_timeout: Duration) -> Result<(bool, Option<KeyAction>),
                 }
 
                 let action = match key_event.code {
-                    KeyCode::Char(' ') | KeyCode::Char('p') | KeyCode::Char('P') => Some(KeyAction::TogglePause),
+                    KeyCode::Char(' ') | KeyCode::Char('p') | KeyCode::Char('P') => {
+                        Some(KeyAction::TogglePause)
+                    }
                     KeyCode::Char('+') | KeyCode::Char('=') => Some(KeyAction::AddStep),
                     KeyCode::Char('-') | KeyCode::Char('_') => Some(KeyAction::SubStep),
                     KeyCode::Char('s') | KeyCode::Char('S') => Some(KeyAction::Skip),
@@ -101,6 +107,7 @@ fn update_ui(
     duration: Duration,
     remaining: Duration,
     is_paused: bool,
+    flash_msg: Option<&str>,
 ) {
     if let Some(pb) = pb {
         let elapsed_millis: u64 = effective_elapsed.as_millis().try_into().unwrap_or(u64::MAX);
@@ -112,11 +119,16 @@ fn update_ui(
 
         let time_str = format_duration(effective_elapsed);
         let total_str = format_duration(duration);
-        let status = get_status_frame(ratio);
 
-        if is_paused {
-            pb.set_message(format!("⏸️ [PAUSED at {}/{}] Press Space/P to resume", time_str, total_str));
+        if let Some(msg) = flash_msg {
+            pb.set_message(format!("⏳ [{}/{}] {}", time_str, total_str, msg));
+        } else if is_paused {
+            pb.set_message(format!(
+                "⏸️ [PAUSED at {}/{}] Press Space/P to resume",
+                time_str, total_str
+            ));
         } else {
+            let status = get_status_frame(ratio);
             pb.set_message(format!("⏳ [{}/{}] {}", time_str, total_str, status));
         }
         pb.set_position(elapsed_millis);
@@ -156,9 +168,14 @@ pub fn run_sleep_timer(
 
     let raw_mode_guard = RawModeGuard::new(no_interaction);
 
+    if !quiet && !raw && raw_mode_guard.active {
+        println!("[Space: Pause | +/-: Time | s: Skip | r: Reset | Ctrl+C: Quit]");
+    }
+
     let mut start = Instant::now();
     let mut paused_accum = Duration::ZERO;
     let mut pause_start: Option<Instant> = None;
+    let mut flash_message: Option<(String, Instant)> = None;
 
     loop {
         let effective_elapsed = if let Some(p_start) = pause_start {
@@ -177,7 +194,10 @@ pub fn run_sleep_timer(
         if let Some(pid) = watch_pid {
             if !is_process_running(pid) {
                 if let Some(ref pb) = pb {
-                    pb.finish_with_message(format!("Watched process PID {} terminated. Exiting!", pid));
+                    pb.finish_with_message(format!(
+                        "Watched process PID {} terminated. Exiting!",
+                        pid
+                    ));
                 } else if raw && !quiet {
                     println!("\nWatched process PID {} terminated. Exiting!", pid);
                 }
@@ -211,6 +231,15 @@ pub fn run_sleep_timer(
             }
         }
 
+        // Check flash message expiry (1.5 seconds)
+        if let Some((_, created_at)) = flash_message {
+            if created_at.elapsed() >= Duration::from_millis(1500) {
+                flash_message = None;
+            }
+        }
+
+        let flash_text = flash_message.as_ref().map(|(msg, _)| msg.as_str());
+
         // Update UI
         update_ui(
             pb.as_ref(),
@@ -220,6 +249,7 @@ pub fn run_sleep_timer(
             duration,
             remaining,
             pause_start.is_some(),
+            flash_text,
         );
 
         let poll_timeout = std::cmp::min(Duration::from_millis(100), remaining);
@@ -252,12 +282,20 @@ pub fn run_sleep_timer(
                         if let Some(ref pb) = pb {
                             pb.set_length(duration.as_millis().try_into().unwrap_or(u64::MAX));
                         }
+                        flash_message = Some((
+                            format!("+{} added!", humantime::format_duration(step)),
+                            Instant::now(),
+                        ));
                     }
                     KeyAction::SubStep => {
                         duration = duration.saturating_sub(step);
                         if let Some(ref pb) = pb {
                             pb.set_length(duration.as_millis().try_into().unwrap_or(u64::MAX));
                         }
+                        flash_message = Some((
+                            format!("-{} removed!", humantime::format_duration(step)),
+                            Instant::now(),
+                        ));
                     }
                     KeyAction::Skip => {
                         if let Some(ref pb) = pb {
@@ -327,10 +365,16 @@ impl PomoState {
         if !args.raw && !args.quiet {
             match self {
                 PomoState::Work(cycle) => {
-                    println!("🍅 Starting Pomodoro Cycle {} Work phase ({:?})...", cycle, args.pomo_work);
+                    println!(
+                        "🍅 Starting Pomodoro Cycle {} Work phase ({:?})...",
+                        cycle, args.pomo_work
+                    );
                 }
                 PomoState::ShortBreak(cycle) => {
-                    println!("☕ Starting Pomodoro Cycle {} Break phase ({:?})...", cycle, args.pomo_break);
+                    println!(
+                        "☕ Starting Pomodoro Cycle {} Break phase ({:?})...",
+                        cycle, args.pomo_break
+                    );
                 }
             }
         }
@@ -396,10 +440,16 @@ mod tests {
     #[test]
     fn test_pomo_state_transitions() {
         let state = PomoState::Work(1);
-        assert_eq!(state.completion_message(), "🍅 Pomodoro Cycle 1: Work finished!");
+        assert_eq!(
+            state.completion_message(),
+            "🍅 Pomodoro Cycle 1: Work finished!"
+        );
         let next_state = state.next();
         assert_eq!(next_state, PomoState::ShortBreak(1));
-        assert_eq!(next_state.completion_message(), "☕ Pomodoro Cycle 1: Break finished!");
+        assert_eq!(
+            next_state.completion_message(),
+            "☕ Pomodoro Cycle 1: Break finished!"
+        );
         let next_work = next_state.next();
         assert_eq!(next_work, PomoState::Work(2));
     }
@@ -418,5 +468,17 @@ mod tests {
         );
         assert_eq!(res.unwrap(), TimerOutcome::WatchedProcessTerminated);
     }
-}
 
+    #[test]
+    fn test_format_duration() {
+        assert_eq!(format_duration(Duration::from_secs(5)), "00:05");
+        assert_eq!(format_duration(Duration::from_secs(65)), "01:05");
+        assert_eq!(format_duration(Duration::from_secs(3665)), "01:01:05");
+    }
+
+    #[test]
+    fn test_raw_mode_guard_creation() {
+        let guard = RawModeGuard::new(true);
+        assert!(!guard.active);
+    }
+}

@@ -8,11 +8,17 @@ mod timer;
 use clap::Parser;
 use cli::Args;
 use error::ZzzError;
+use std::io::IsTerminal;
 use time::parse_until_target;
 use timer::{execute_command, run_pomo_mode, run_sleep_timer, TimerOutcome};
 
 fn main() -> Result<(), ZzzError> {
-    let args = Args::parse();
+    let mut args = Args::parse();
+
+    if !std::io::stdout().is_terminal() {
+        args.no_interaction = true;
+        args.quiet = true;
+    }
 
     let outcome = if args.pomo {
         run_pomo_mode(&args)?
@@ -53,4 +59,3 @@ fn main() -> Result<(), ZzzError> {
         }
     }
 }
-
