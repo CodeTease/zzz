@@ -146,7 +146,10 @@ fn update_ui(
             ));
         } else {
             let status = get_status_frame(ratio);
-            pb.set_message(format!("⏳ [{}/{}] {}", time_str, total_str, status));
+            pb.set_message(format!(
+                "⏳ [{}/{}] {}  (Space:Pause | +/-:Step | s:Skip | r:Reset)",
+                time_str, total_str, status
+            ));
         }
         pb.set_position(elapsed_millis);
     } else if raw && !quiet {
@@ -191,10 +194,6 @@ pub fn run_sleep_timer(
     };
 
     let raw_mode_guard = RawModeGuard::new(no_interaction);
-
-    if !quiet && !raw && raw_mode_guard.active {
-        println!("[Space: Pause | +/-: Time | s: Skip | r: Reset | Ctrl+C: Quit]");
-    }
 
     let mut start = Instant::now();
     let mut paused_accum = Duration::ZERO;
