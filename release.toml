@@ -1,0 +1,78 @@
+[metadata]
+bin = "zzz"
+version = "0.1.0"
+repository = "https://github.com/CodeTease/zzz"
+toolchain = "stable"
+
+license = "MIT"
+homepage = "https://github.com/CodeTease/zzz"
+maintainer = "CodeTease"
+description = "A fancy sleep command written in Rust 💤"
+
+[metadata.files]
+include = ["README.md", "LICENSE"]
+exclude = []
+
+[nfpm]
+enable = true
+
+[archlinux]
+enable = true
+
+[cloudsmith]
+enable = true
+repo = "codetease/tools"
+docs_path = "INSTALLATION.md"
+
+[brew]
+enable = true
+tap = "CodeTease/homebrew-tap"
+
+[scoop]
+enable = true
+bucket = "CodeTease/scoop-bucket"
+
+[nuget]
+enable = true
+authors = "CodeTease"
+
+[crate]
+enable = true
+registries = ["crates.io"]
+
+[cloudsmith.targets]
+deb = "ubuntu/noble"
+rpm = "el/9"
+apk = "alpine/any-version"
+
+[msi]
+enable = true
+
+[installer]
+enable = true
+features = ["sh", "ps1"]
+path = "~/.local/bin"
+path-win = "$HOME/.local/bin"
+
+[docker]
+enable = false
+
+[targets]
+"aarch64-apple-darwin" = true
+"x86_64-apple-darwin" = true
+"x86_64-pc-windows-msvc" = true
+"x86_64-pc-windows-gnu" = true
+"aarch64-pc-windows-msvc" = true
+"x86_64-unknown-linux-gnu" = true
+"x86_64-unknown-linux-musl" = true
+"aarch64-unknown-linux-gnu" = true
+"aarch64-unknown-linux-musl" = true
+"armv7-unknown-linux-gnueabihf" = true
+"armv7-unknown-linux-musleabihf" = true
+"riscv64gc-unknown-linux-gnu" = true
+"loongarch64-unknown-linux-gnu" = true
+"loongarch64-unknown-linux-musl" = true
+"i686-pc-windows-msvc" = true
+"i686-unknown-linux-gnu" = true
+"s390x-unknown-linux-gnu" = true
+"powerpc64le-unknown-linux-gnu" = true
