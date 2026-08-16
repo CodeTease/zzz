@@ -15,10 +15,10 @@ signal-hook = "0.4"
 crossterm = "0.29"
 chrono = "0.4"
 libc = "0.2"
-sysinfo = "0.33"
+sysinfo = "0.39"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation"] }
 ctrlc = "3.4"
 
 [profile.release]
