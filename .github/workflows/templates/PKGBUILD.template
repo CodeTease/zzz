@@ -1,13 +1,13 @@
 # Maintainer: {{maintainer}}
-pkgname={{bin}}-bin
+pkgname=zzzsleep-bin
 pkgver={{version}}
 pkgrel=1
 pkgdesc="{{description}}"
 url="{{repository}}"
 license=('{{license}}')
 options=(!strip !debug)
-provides=('{{bin}}')
-conflicts=('{{bin}}')
+provides=('zzzsleep')
+conflicts=('zzzsleep')
 arch=()
 [IF arch.x86_64]
 arch+=('x86_64')
@@ -22,7 +22,7 @@ sha256sums_aarch64=('{{sha256_aarch64}}')
 
 package() {
     local bin_path=$(find "$srcdir" -type f -name "{{bin}}" -executable | head -n 1)
-    
+
     if [ -n "$bin_path" ]; then
         install -Dm755 "$bin_path" "${pkgdir}/usr/bin/{{bin}}"
     else
