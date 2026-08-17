@@ -43,6 +43,26 @@ pub struct Args {
     #[arg(long, alias = "exec", value_name = "COMMAND", env = "ZZZ_THEN")]
     pub then: Option<String>,
 
+    /// Present interactive menu upon timer completion to select a post-timer action
+    #[arg(long, env = "ZZZ_THEN_MENU")]
+    pub then_menu: bool,
+
+    /// Execute command when timer is cancelled or interrupted
+    #[arg(long, value_name = "COMMAND", env = "ZZZ_ON_INTERRUPT")]
+    pub on_interrupt: Option<String>,
+
+    /// Execute command when timer is paused
+    #[arg(long, value_name = "COMMAND", env = "ZZZ_ON_PAUSE")]
+    pub on_pause: Option<String>,
+
+    /// Execute command on each timer tick
+    #[arg(long, value_name = "COMMAND", env = "ZZZ_ON_TICK")]
+    pub on_tick: Option<String>,
+
+    /// Enable Stopwatch (count-up) mode
+    #[arg(long, env = "ZZZ_STOPWATCH")]
+    pub stopwatch: bool,
+
     /// Monitor PID and exit early if process terminates
     #[arg(long, value_name = "PID", env = "ZZZ_WATCH")]
     pub watch: Option<u32>,
@@ -93,6 +113,27 @@ mod tests {
         let no_interaction_args =
             Args::try_parse_from(&["zzz", "10s", "--no-interaction"]).unwrap();
         assert!(no_interaction_args.no_interaction);
+
+        let new_hooks_args = Args::try_parse_from(&[
+            "zzz",
+            "--stopwatch",
+            "--then-menu",
+            "--on-interrupt",
+            "echo interrupt",
+            "--on-pause",
+            "echo pause",
+            "--on-tick",
+            "echo tick",
+        ])
+        .unwrap();
+        assert!(new_hooks_args.stopwatch);
+        assert!(new_hooks_args.then_menu);
+        assert_eq!(
+            new_hooks_args.on_interrupt,
+            Some("echo interrupt".to_string())
+        );
+        assert_eq!(new_hooks_args.on_pause, Some("echo pause".to_string()));
+        assert_eq!(new_hooks_args.on_tick, Some("echo tick".to_string()));
     }
 
     static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -109,6 +150,11 @@ mod tests {
             std::env::set_var("ZZZ_THEN", "notify-send \"Done\"");
             std::env::set_var("ZZZ_POMO_WORK", "50m");
             std::env::set_var("ZZZ_POMO_BREAK", "10m");
+            std::env::set_var("ZZZ_STOPWATCH", "true");
+            std::env::set_var("ZZZ_THEN_MENU", "true");
+            std::env::set_var("ZZZ_ON_INTERRUPT", "echo interrupt_env");
+            std::env::set_var("ZZZ_ON_PAUSE", "echo pause_env");
+            std::env::set_var("ZZZ_ON_TICK", "echo tick_env");
         }
 
         let args = Args::try_parse_from(&["zzz", "5s"]).unwrap();
@@ -122,6 +168,11 @@ mod tests {
             std::env::remove_var("ZZZ_THEN");
             std::env::remove_var("ZZZ_POMO_WORK");
             std::env::remove_var("ZZZ_POMO_BREAK");
+            std::env::remove_var("ZZZ_STOPWATCH");
+            std::env::remove_var("ZZZ_THEN_MENU");
+            std::env::remove_var("ZZZ_ON_INTERRUPT");
+            std::env::remove_var("ZZZ_ON_PAUSE");
+            std::env::remove_var("ZZZ_ON_TICK");
         }
 
         assert_eq!(args.theme, Theme::Cat);
@@ -132,5 +183,10 @@ mod tests {
         assert_eq!(args.then, Some("notify-send \"Done\"".to_string()));
         assert_eq!(args.pomo_work, Duration::from_secs(50 * 60));
         assert_eq!(args.pomo_break, Duration::from_secs(10 * 60));
+        assert!(args.stopwatch);
+        assert!(args.then_menu);
+        assert_eq!(args.on_interrupt, Some("echo interrupt_env".to_string()));
+        assert_eq!(args.on_pause, Some("echo pause_env".to_string()));
+        assert_eq!(args.on_tick, Some("echo tick_env".to_string()));
     }
 }

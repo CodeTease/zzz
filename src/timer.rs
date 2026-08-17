@@ -81,6 +81,8 @@ pub enum KeyAction {
     SubStep,
     Skip,
     Reset,
+    Quit,
+    Lap,
 }
 
 fn handle_key_input(poll_timeout: Duration) -> Result<(bool, Option<KeyAction>), ZzzError> {
@@ -102,6 +104,9 @@ fn handle_key_input(poll_timeout: Duration) -> Result<(bool, Option<KeyAction>),
                     KeyCode::Char('-') | KeyCode::Char('_') => Some(KeyAction::SubStep),
                     KeyCode::Char('s') | KeyCode::Char('S') => Some(KeyAction::Skip),
                     KeyCode::Char('r') | KeyCode::Char('R') => Some(KeyAction::Reset),
+                    KeyCode::Char('q') | KeyCode::Char('Q') => Some(KeyAction::Quit),
+                    KeyCode::Char('l') | KeyCode::Char('L') => Some(KeyAction::Lap),
+                    KeyCode::Char('c') | KeyCode::Char('C') => Some(KeyAction::Cancel),
                     _ => None,
                 };
 
@@ -169,6 +174,8 @@ pub fn run_sleep_timer(
     watch_pid: Option<u32>,
     completion_message: &str,
     step: Duration,
+    on_pause: Option<&str>,
+    on_tick: Option<&str>,
 ) -> Result<TimerOutcome, ZzzError> {
     if duration.as_millis() == 0 {
         if raw && !quiet {
@@ -199,6 +206,7 @@ pub fn run_sleep_timer(
     let mut paused_accum = Duration::ZERO;
     let mut pause_start: Option<Instant> = None;
     let mut flash_message: Option<(String, Instant)> = None;
+    let mut last_tick_sec: Option<u64> = Some(0);
 
     loop {
         let effective_elapsed = if let Some(p_start) = pause_start {
@@ -206,6 +214,18 @@ pub fn run_sleep_timer(
         } else {
             start.elapsed().saturating_sub(paused_accum)
         };
+
+        if pause_start.is_none() {
+            let current_sec = effective_elapsed.as_secs();
+            if last_tick_sec != Some(current_sec) {
+                last_tick_sec = Some(current_sec);
+                if current_sec > 0 {
+                    if let Some(cmd) = on_tick {
+                        let _ = execute_command(cmd);
+                    }
+                }
+            }
+        }
 
         if effective_elapsed >= duration {
             break;
@@ -215,17 +235,15 @@ pub fn run_sleep_timer(
 
         // Check watched PID
         if let Some(pid) = watch_pid
-            && !is_process_running(pid) {
-                if let Some(ref pb) = pb {
-                    pb.finish_with_message(format!(
-                        "Watched process PID {} terminated. Exiting!",
-                        pid
-                    ));
-                } else if raw && !quiet {
-                    println!("\nWatched process PID {} terminated. Exiting!", pid);
-                }
-                return Ok(TimerOutcome::WatchedProcessTerminated);
+            && !is_process_running(pid)
+        {
+            if let Some(ref pb) = pb {
+                pb.finish_with_message(format!("Watched process PID {} terminated. Exiting!", pid));
+            } else if raw && !quiet {
+                println!("\nWatched process PID {} terminated. Exiting!", pid);
             }
+            return Ok(TimerOutcome::WatchedProcessTerminated);
+        }
 
         // Handle unix signals
         #[cfg(unix)]
@@ -242,6 +260,9 @@ pub fn run_sleep_timer(
                 SIGTSTP => {
                     if pause_start.is_none() {
                         pause_start = Some(Instant::now());
+                        if let Some(cmd) = on_pause {
+                            let _ = execute_command(cmd);
+                        }
                     }
                 }
                 SIGCONT => {
@@ -269,9 +290,10 @@ pub fn run_sleep_timer(
 
         // Check flash message expiry (1.5 seconds)
         if let Some((_, created_at)) = flash_message
-            && created_at.elapsed() >= Duration::from_millis(1500) {
-                flash_message = None;
-            }
+            && created_at.elapsed() >= Duration::from_millis(1500)
+        {
+            flash_message = None;
+        }
 
         let flash_text = flash_message.as_ref().map(|(msg, _)| msg.as_str());
 
@@ -310,6 +332,9 @@ pub fn run_sleep_timer(
                             pause_start = None;
                         } else {
                             pause_start = Some(Instant::now());
+                            if let Some(cmd) = on_pause {
+                                let _ = execute_command(cmd);
+                            }
                         }
                     }
                     KeyAction::AddStep => {
@@ -348,6 +373,7 @@ pub fn run_sleep_timer(
                             pb.set_position(0);
                         }
                     }
+                    KeyAction::Quit | KeyAction::Lap => {}
                 }
             }
         }
@@ -366,6 +392,203 @@ pub fn run_sleep_timer(
     }
 
     Ok(TimerOutcome::Completed)
+}
+
+pub fn run_stopwatch_timer(args: &Args) -> Result<TimerOutcome, ZzzError> {
+    #[cfg(unix)]
+    let mut signals = Signals::new([SIGINT, SIGTERM, SIGTSTP, SIGCONT])?;
+
+    #[cfg(not(unix))]
+    {
+        setup_ctrlc_handler();
+        CTRL_C_INTERRUPTED.store(false, Ordering::SeqCst);
+    }
+
+    let pb = if !args.quiet && !args.raw {
+        Some(create_progress_bar(u64::MAX, &args.theme)?)
+    } else {
+        None
+    };
+
+    let raw_mode_guard = RawModeGuard::new(args.no_interaction);
+
+    let mut start = Instant::now();
+    let mut paused_accum = Duration::ZERO;
+    let mut pause_start: Option<Instant> = None;
+    let mut last_tick_sec: Option<u64> = Some(0);
+    let mut lap_count: u32 = 0;
+    let mut last_lap_elapsed = Duration::ZERO;
+
+    loop {
+        let effective_elapsed = if let Some(p_start) = pause_start {
+            (p_start - start).saturating_sub(paused_accum)
+        } else {
+            start.elapsed().saturating_sub(paused_accum)
+        };
+
+        if pause_start.is_none() {
+            let current_sec = effective_elapsed.as_secs();
+            if last_tick_sec != Some(current_sec) {
+                last_tick_sec = Some(current_sec);
+                if current_sec > 0 {
+                    if let Some(ref cmd) = args.on_tick {
+                        let _ = execute_command(cmd);
+                    }
+                }
+            }
+        }
+
+        // Check watched PID
+        if let Some(pid) = args.watch
+            && !is_process_running(pid)
+        {
+            if let Some(ref pb) = pb {
+                pb.finish_with_message(format!("Watched process PID {} terminated. Exiting!", pid));
+            } else if args.raw && !args.quiet {
+                println!("\nWatched process PID {} terminated. Exiting!", pid);
+            }
+            return Ok(TimerOutcome::WatchedProcessTerminated);
+        }
+
+        // Handle unix signals
+        #[cfg(unix)]
+        for sig in signals.pending() {
+            match sig {
+                SIGINT | SIGTERM => {
+                    if let Some(ref pb) = pb {
+                        pb.abandon_with_message("Stopwatch cancelled! 🛑");
+                    } else if args.raw && !args.quiet {
+                        eprintln!("\nStopwatch cancelled! 🛑");
+                    }
+                    return Ok(TimerOutcome::Interrupted);
+                }
+                SIGTSTP => {
+                    if pause_start.is_none() {
+                        pause_start = Some(Instant::now());
+                        if let Some(ref cmd) = args.on_pause {
+                            let _ = execute_command(cmd);
+                        }
+                    }
+                }
+                SIGCONT => {
+                    if let Some(p_start) = pause_start {
+                        paused_accum += p_start.elapsed();
+                        pause_start = None;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Handle non-unix signals
+        #[cfg(not(unix))]
+        {
+            if CTRL_C_INTERRUPTED.swap(false, Ordering::SeqCst) {
+                if let Some(ref pb) = pb {
+                    pb.abandon_with_message("Stopwatch cancelled! 🛑");
+                } else if args.raw && !args.quiet {
+                    eprintln!("\nStopwatch cancelled! 🛑");
+                }
+                return Ok(TimerOutcome::Interrupted);
+            }
+        }
+
+        // Update UI
+        if let Some(ref pb) = pb {
+            let time_str = format_duration(effective_elapsed);
+            if pause_start.is_some() {
+                pb.set_message(format!(
+                    "⏸️ [PAUSED at {}] Press Space/P to resume",
+                    time_str
+                ));
+            } else {
+                pb.set_message(format!(
+                    "⏱️ [{}] (Space:Pause | l:Lap | r:Reset | q:Quit)",
+                    time_str
+                ));
+            }
+            pb.tick();
+        } else if args.raw && !args.quiet {
+            let time_str = format_duration(effective_elapsed);
+            print!("\r{:10}", time_str);
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+        }
+
+        let poll_timeout = Duration::from_millis(100);
+
+        let mut key_event_occurred = false;
+        if raw_mode_guard.active {
+            let (occurred, action) = handle_key_input(poll_timeout)?;
+            key_event_occurred = occurred;
+
+            if let Some(act) = action {
+                match act {
+                    KeyAction::Cancel => {
+                        if let Some(ref pb) = pb {
+                            pb.abandon_with_message("Stopwatch cancelled! 🛑");
+                        } else if args.raw && !args.quiet {
+                            eprintln!("\nStopwatch cancelled! 🛑");
+                        }
+                        return Ok(TimerOutcome::Interrupted);
+                    }
+                    KeyAction::Quit => {
+                        if let Some(ref pb) = pb {
+                            pb.finish_with_message(format!(
+                                "Stopwatch stopped at {}! ⏱️",
+                                format_duration(effective_elapsed)
+                            ));
+                        } else if args.raw && !args.quiet {
+                            println!("\r{:10}", format_duration(effective_elapsed));
+                        }
+                        return Ok(TimerOutcome::Completed);
+                    }
+                    KeyAction::TogglePause => {
+                        if let Some(p_start) = pause_start {
+                            paused_accum += p_start.elapsed();
+                            pause_start = None;
+                        } else {
+                            pause_start = Some(Instant::now());
+                            if let Some(ref cmd) = args.on_pause {
+                                let _ = execute_command(cmd);
+                            }
+                        }
+                    }
+                    KeyAction::Lap => {
+                        lap_count += 1;
+                        let lap_dur = effective_elapsed.saturating_sub(last_lap_elapsed);
+                        last_lap_elapsed = effective_elapsed;
+                        let lap_msg = format!(
+                            "⏱️ Lap {}: {} (Total: {})",
+                            lap_count,
+                            format_duration(lap_dur),
+                            format_duration(effective_elapsed)
+                        );
+                        if let Some(ref pb) = pb {
+                            pb.println(&lap_msg);
+                        } else if !args.quiet {
+                            println!("\n{}", lap_msg);
+                        }
+                    }
+                    KeyAction::Reset => {
+                        start = Instant::now();
+                        paused_accum = Duration::ZERO;
+                        pause_start = None;
+                        lap_count = 0;
+                        last_lap_elapsed = Duration::ZERO;
+                        if let Some(ref pb) = pb {
+                            pb.set_position(0);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if !key_event_occurred && !raw_mode_guard.active {
+            std::thread::sleep(poll_timeout);
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -429,6 +652,8 @@ pub fn run_pomo_mode(args: &Args) -> Result<TimerOutcome, ZzzError> {
             args.watch,
             &state.completion_message(),
             args.step,
+            args.on_pause.as_deref(),
+            args.on_tick.as_deref(),
         )?;
 
         if outcome != TimerOutcome::Completed {
@@ -469,8 +694,6 @@ pub fn resolve_shell_and_flag(shell_env: Option<&str>) -> (&str, &str) {
 }
 
 pub fn execute_command(cmd_str: &str) -> Result<(), ZzzError> {
-    println!("Executing command: {}", cmd_str);
-
     let shell_env = std::env::var("SHELL").ok();
     let (shell, arg_flag) = resolve_shell_and_flag(shell_env.as_deref());
 
@@ -497,6 +720,25 @@ mod tests {
             None,
             "Done",
             Duration::from_secs(30),
+            None,
+            None,
+        );
+        assert_eq!(res.unwrap(), TimerOutcome::Completed);
+    }
+
+    #[test]
+    fn test_run_sleep_timer_with_hooks() {
+        let res = run_sleep_timer(
+            Duration::from_millis(50),
+            true,
+            false,
+            true,
+            &Theme::Classic,
+            None,
+            "Done",
+            Duration::from_secs(30),
+            Some("echo pause"),
+            Some("echo tick"),
         );
         assert_eq!(res.unwrap(), TimerOutcome::Completed);
     }
@@ -519,6 +761,16 @@ mod tests {
     }
 
     #[test]
+    fn test_run_stopwatch_timer_watched_dead_pid() {
+        use clap::Parser;
+        let args = Args::try_parse_from(&["zzz", "--stopwatch", "--no-interaction"]).unwrap();
+        let mut args_watched = args;
+        args_watched.watch = Some(999999);
+        let res = run_stopwatch_timer(&args_watched);
+        assert_eq!(res.unwrap(), TimerOutcome::WatchedProcessTerminated);
+    }
+
+    #[test]
     fn test_run_sleep_timer_watched_dead_pid() {
         let res = run_sleep_timer(
             Duration::from_secs(10),
@@ -529,6 +781,8 @@ mod tests {
             Some(999999),
             "Done",
             Duration::from_secs(30),
+            None,
+            None,
         );
         assert_eq!(res.unwrap(), TimerOutcome::WatchedProcessTerminated);
     }
