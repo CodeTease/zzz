@@ -1,15 +1,15 @@
 [package]
 name = "zzzsleep"
-version = "0.1.0"
+version = "0.2.0"
+authors = ["CodeTease"]
 edition = "2024"
 description = "A fancy sleep command written in Rust 💤"
 license = "MIT"
 keywords = ["sleep", "timer", "pomodoro", "progress", "cli"]
-categories = ["command-line-utilities", "multimedia"]
+categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
 homepage = "https://github.com/CodeTease/zzz"
 repository = "https://github.com/CodeTease/zzz"
-documentation = "https://docs.rs/zzz"
 
 [[bin]]
 name = "zzz"
