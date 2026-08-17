@@ -37,7 +37,7 @@ enable = true
 authors = "CodeTease"
 
 [crate]
-enable = true
+enable = false # disabled: use GitHub Actions for crates.io OIDC publishing
 registries = ["crates.io"]
 
 [cloudsmith.targets]
