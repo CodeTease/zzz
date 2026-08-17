@@ -2,6 +2,14 @@
 name = "zzzsleep"
 version = "0.1.0"
 edition = "2024"
+description = "A fancy sleep command written in Rust 💤"
+license = "MIT"
+keywords = ["sleep", "timer", "pomodoro", "progress", "cli"]
+categories = ["command-line-utilities", "multimedia"]
+readme = "README.md"
+homepage = "https://github.com/username/zzz"
+repository = "https://github.com/username/zzz"
+documentation = "https://docs.rs/zzz"
 
 [[bin]]
 name = "zzz"

@@ -13,13 +13,13 @@ export def publish [config: record] {
     if $crate_enabled and $is_tag {
         print $"(char nl)[Crate] Publishing to registries: ($crate_registries | str join ', ')..."
         hr-line
-        
+
         # crates.io
         if "crates.io" in $crate_registries {
             if ($env.CARGO_REGISTRY_TOKEN? | is-not-empty) {
                 print "[Crate] Publishing to crates.io..."
                 try {
-                    cargo publish --token $env.CARGO_REGISTRY_TOKEN
+                    cargo publish --allow-dirty --token $env.CARGO_REGISTRY_TOKEN
                     print "[Crate] Successfully published to crates.io"
                 } catch {
                     print "::warning::[Crate] Failed to publish to crates.io"
