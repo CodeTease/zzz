@@ -15,7 +15,7 @@ signal-hook = "0.4"
 crossterm = "0.29"
 chrono = "0.4"
 libc = "0.2"
-sysinfo = "0.39"
+sysinfo = "0.33" # Downgrade to 0.33 to build on older toolchains
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation"] }
