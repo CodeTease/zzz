@@ -17,11 +17,13 @@ Please read the [Installation Guide](INSTALLATION.md) for detailed installation 
 ## Features
 
 - ⏳ **Flexible Sleep Duration**: Pass standard durations like `5s`, `1.5m`, `2h`, or specify target times with `--until` (e.g. `17:00`, `5:30pm`, `tomorrow-8am`).
+- ⏱️ **Stopwatch Mode**: Track elapsed time upwards with `--stopwatch` and log lap times on the fly.
 - 🍅 **Pomodoro Mode**: Built-in Pomodoro productivity timer cycles (work/break intervals).
 - 🎨 **Visual Themes**: Choose from multiple animated themes (`classic`, `cat`, `moon`, `pixel`, `matrix`). Respects `NO_COLOR` standard.
-- ⌨️ **Interactive Terminal Controls**: Pause/resume, adjust remaining time on the fly (`+`/`-`), skip, or reset the timer interactively.
+- ⌨️ **Interactive Terminal Controls**: Pause/resume, adjust remaining time (`+`/`-`), skip, reset, or record lap times (`l`) interactively.
 - 👁️ **Process Monitoring**: Watch a process PID (`--watch <PID>`) and exit automatically if the monitored process terminates.
-- 🚀 **Command Execution**: Automatically run a command when the timer completes with `--then <COMMAND>` (or `--exec`).
+- 🚀 **Command Execution & Hooks**: Automatically run commands upon completion (`--then`), pause (`--on-pause`), tick (`--on-tick`), or cancellation (`--on-interrupt`).
+- 📋 **Interactive Action Menu**: Choose post-timer actions (`--then-menu`) interactively (Lock screen, Shutdown, Do nothing, Custom command).
 - 🛠️ **Scripting & CI Support**: Non-interactive mode (`--no-interaction`), quiet mode (`--quiet`), and raw output mode (`--raw`) for seamless script and pipeline integration.
 - ⚙️ **Environment Variable Config**: Configure options via environment variables (`ZZZ_*`).
 
@@ -65,6 +67,30 @@ zzz 30s --theme pixel
 ```
 Available themes: `classic`, `cat`, `moon`, `pixel`, `matrix`.
 
+### Count-Up / Stopwatch Mode
+Track elapsed time upwards until you press `q` or `Ctrl+C`:
+```bash
+zzz --stopwatch
+```
+Press `l` while running to log the lap time to the terminal.
+
+### Hook Callbacks
+Execute specific shell commands on pause, tick, or interrupt:
+```bash
+zzz 25m --then "playerctl play" --on-pause "playerctl pause" --on-interrupt "notify-send 'Cancelled'"
+```
+
+### Interactive Command Menu
+Present an interactive menu upon timer completion to select a post-timer action:
+```bash
+zzz 25m --then-menu
+```
+Presents choices:
+- `[1] Lock screen`
+- `[2] Shutdown`
+- `[3] Do nothing`
+- `[4] Run custom command`
+
 ### Execute Command After Sleep
 Run a shell command when waking up:
 ```bash
@@ -82,11 +108,13 @@ zzz 1h --watch 12345
 ### Interactive Controls
 While `zzz` is running in an interactive terminal, you can press:
 - `Space` or `P`: Pause / Resume timer
+- `L`: Record and log lap time (in Stopwatch mode)
 - `+` or `=`: Add step duration (default: +30s)
 - `-` or `_`: Subtract step duration (default: -30s)
 - `S`: Skip timer and complete immediately
 - `R`: Reset timer to start
-- `Ctrl+C`: Cancel timer
+- `Q`: Stop / quit stopwatch timer
+- `Ctrl+C` or `C`: Cancel / interrupt timer
 
 Custom step duration:
 ```bash
@@ -104,8 +132,13 @@ zzz 10m --step 1m
 | `--pomo` | `ZZZ_POMO` | Enable Pomodoro mode | `false` |
 | `--pomo-work <DUR>` | `ZZZ_POMO_WORK` | Work duration for Pomodoro mode | `25m` |
 | `--pomo-break <DUR>` | `ZZZ_POMO_BREAK` | Break duration for Pomodoro mode | `5m` |
+| `--stopwatch` | `ZZZ_STOPWATCH` | Enable Stopwatch (count-up) mode | `false` |
 | `--theme <THEME>` | `ZZZ_THEME` | Progress bar theme (`classic`, `cat`, `moon`, `pixel`, `matrix`) | `classic` |
 | `--then / --exec <CMD>` | `ZZZ_THEN` | Execute command upon completion | — |
+| `--then-menu` | `ZZZ_THEN_MENU` | Select post-timer action interactively | `false` |
+| `--on-interrupt <CMD>` | `ZZZ_ON_INTERRUPT` | Execute command when cancelled / interrupted | — |
+| `--on-pause <CMD>` | `ZZZ_ON_PAUSE` | Execute command when timer is paused | — |
+| `--on-tick <CMD>` | `ZZZ_ON_TICK` | Execute command on each timer tick | — |
 | `--watch <PID>` | `ZZZ_WATCH` | Monitor PID and exit early if process terminates | — |
 | `-q, --quiet` | `ZZZ_QUIET` | Hide progress bar / output | `false` |
 | `-m, --message <MSG>` | `ZZZ_MESSAGE` | Completion message | `Woke up! 🚀` |
