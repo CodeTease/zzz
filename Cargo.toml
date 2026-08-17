@@ -7,8 +7,8 @@ license = "MIT"
 keywords = ["sleep", "timer", "pomodoro", "progress", "cli"]
 categories = ["command-line-utilities", "multimedia"]
 readme = "README.md"
-homepage = "https://github.com/username/zzz"
-repository = "https://github.com/username/zzz"
+homepage = "https://github.com/CodeTease/zzz"
+repository = "https://github.com/CodeTease/zzz"
 documentation = "https://docs.rs/zzz"
 
 [[bin]]
