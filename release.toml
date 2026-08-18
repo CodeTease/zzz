@@ -1,6 +1,6 @@
 [metadata]
-bin = "zzz"
-version = "0.2.0"
+bin = "zzs"
+version = "0.3.0"
 repository = "https://github.com/CodeTease/zzz"
 toolchain = "stable"
 

@@ -2,13 +2,19 @@
 
 > A fancy sleep command written in Rust.
 
-`zzz` is an interactive, feature-packed replacement for the traditional `sleep` command. It offers progress bars, custom themes, Pomodoro timers, process watching, flexible duration inputs, command execution post-timer, and keyboard controls.
+`zzz` (executed as `zzs`) is an interactive, feature-packed replacement for the traditional `sleep` command. It offers progress bars, custom themes, Pomodoro timers, process watching, flexible duration inputs, command execution post-timer, and keyboard controls.
 
 A **CodeTease** project.
 
 ---
 
 ## Installation
+
+Install from [crates.io](https://crates.io/crates/zzzsleep):
+
+```bash
+cargo install zzzsleep
+```
 
 Please read the [Installation Guide](INSTALLATION.md) for detailed installation instructions.
 
@@ -34,56 +40,56 @@ Please read the [Installation Guide](INSTALLATION.md) for detailed installation 
 ### Basic Sleep
 Sleep for a specific duration:
 ```bash
-zzz 10s
-zzz 1.5m
-zzz 2h
+zzs 10s
+zzs 1.5m
+zzs 2h
 ```
 
 ### Sleep Until Specific Time
 Sleep until a target time today or tomorrow:
 ```bash
-zzz --until 17:00
-zzz --until 5:30pm
-zzz --until tomorrow-8am
+zzs --until 17:00
+zzs --until 5:30pm
+zzs --until tomorrow-8am
 ```
 
 ### Pomodoro Timer
 Start a Pomodoro cycle with default 25m work / 5m break intervals:
 ```bash
-zzz --pomo
+zzs --pomo
 ```
 Customize work and break durations:
 ```bash
-zzz --pomo --pomo-work 50m --pomo-break 10m
+zzs --pomo --pomo-work 50m --pomo-break 10m
 ```
 
 ### Themes
 Choose a visual theme for the progress bar:
 ```bash
-zzz 5m --theme cat
-zzz 10m --theme moon
-zzz 1h --theme matrix
-zzz 30s --theme pixel
+zzs 5m --theme cat
+zzs 10m --theme moon
+zzs 1h --theme matrix
+zzs 30s --theme pixel
 ```
 Available themes: `classic`, `cat`, `moon`, `pixel`, `matrix`.
 
 ### Count-Up / Stopwatch Mode
 Track elapsed time upwards until you press `q` or `Ctrl+C`:
 ```bash
-zzz --stopwatch
+zzs --stopwatch
 ```
 Press `l` while running to log the lap time to the terminal.
 
 ### Hook Callbacks
 Execute specific shell commands on pause, tick, or interrupt:
 ```bash
-zzz 25m --then "playerctl play" --on-pause "playerctl pause" --on-interrupt "notify-send 'Cancelled'"
+zzs 25m --then "playerctl play" --on-pause "playerctl pause" --on-interrupt "notify-send 'Cancelled'"
 ```
 
 ### Interactive Command Menu
 Present an interactive menu upon timer completion to select a post-timer action:
 ```bash
-zzz 25m --then-menu
+zzs 25m --then-menu
 ```
 Presents choices:
 - `[1] Lock screen`
@@ -94,19 +100,19 @@ Presents choices:
 ### Execute Command After Sleep
 Run a shell command when waking up:
 ```bash
-zzz 10m --then "notify-send 'Timer complete!'"
+zzs 10m --then "notify-send 'Timer complete!'"
 # or using the --exec alias
-zzz 1h --exec "make build"
+zzs 1h --exec "make build"
 ```
 
 ### Monitor Process PID
-Sleep while monitoring a background process PID. If the process terminates, `zzz` exits immediately:
+Sleep while monitoring a background process PID. If the process terminates, `zzs` exits immediately:
 ```bash
-zzz 1h --watch 12345
+zzs 1h --watch 12345
 ```
 
 ### Interactive Controls
-While `zzz` is running in an interactive terminal, you can press:
+While `zzs` is running in an interactive terminal, you can press:
 - `Space` or `P`: Pause / Resume timer
 - `L`: Record and log lap time (in Stopwatch mode)
 - `+` or `=`: Add step duration (default: +30s)
@@ -118,7 +124,7 @@ While `zzz` is running in an interactive terminal, you can press:
 
 Custom step duration:
 ```bash
-zzz 10m --step 1m
+zzs 10m --step 1m
 ```
 
 ---

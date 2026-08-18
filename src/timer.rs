@@ -763,7 +763,7 @@ mod tests {
     #[test]
     fn test_run_stopwatch_timer_watched_dead_pid() {
         use clap::Parser;
-        let args = Args::try_parse_from(&["zzz", "--stopwatch", "--no-interaction"]).unwrap();
+        let args = Args::try_parse_from(&["zzs", "--stopwatch", "--no-interaction"]).unwrap();
         let mut args_watched = args;
         args_watched.watch = Some(999999);
         let res = run_stopwatch_timer(&args_watched);

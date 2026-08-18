@@ -11,7 +11,7 @@ pub enum Theme {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "zzz")]
+#[command(name = "zzs")]
 #[command(version)]
 #[command(about = "A fancy sleep command written in Rust 💤", long_about = None)]
 pub struct Args {
@@ -96,26 +96,26 @@ mod tests {
     fn test_cli_parsing() {
         let _guard = TEST_MUTEX.lock().unwrap();
         let args =
-            Args::try_parse_from(&["zzz", "5s", "--theme", "cat", "--then", "echo hello"]).unwrap();
+            Args::try_parse_from(&["zzs", "5s", "--theme", "cat", "--then", "echo hello"]).unwrap();
         assert_eq!(args.duration, Some(Duration::from_secs(5)));
         assert_eq!(args.theme, Theme::Cat);
         assert_eq!(args.then, Some("echo hello".to_string()));
         assert_eq!(args.step, Duration::from_secs(30));
         assert!(!args.raw);
 
-        let exec_alias_args = Args::try_parse_from(&["zzz", "10s", "--exec", "ls"]).unwrap();
+        let exec_alias_args = Args::try_parse_from(&["zzs", "10s", "--exec", "ls"]).unwrap();
         assert_eq!(exec_alias_args.then, Some("ls".to_string()));
 
-        let raw_step_args = Args::try_parse_from(&["zzz", "10s", "--raw", "--step", "1m"]).unwrap();
+        let raw_step_args = Args::try_parse_from(&["zzs", "10s", "--raw", "--step", "1m"]).unwrap();
         assert!(raw_step_args.raw);
         assert_eq!(raw_step_args.step, Duration::from_secs(60));
 
         let no_interaction_args =
-            Args::try_parse_from(&["zzz", "10s", "--no-interaction"]).unwrap();
+            Args::try_parse_from(&["zzs", "10s", "--no-interaction"]).unwrap();
         assert!(no_interaction_args.no_interaction);
 
         let new_hooks_args = Args::try_parse_from(&[
-            "zzz",
+            "zzs",
             "--stopwatch",
             "--then-menu",
             "--on-interrupt",
@@ -157,7 +157,7 @@ mod tests {
             std::env::set_var("ZZZ_ON_TICK", "echo tick_env");
         }
 
-        let args = Args::try_parse_from(&["zzz", "5s"]).unwrap();
+        let args = Args::try_parse_from(&["zzs", "5s"]).unwrap();
 
         unsafe {
             std::env::remove_var("ZZZ_THEME");

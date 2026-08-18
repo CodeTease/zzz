@@ -7,9 +7,9 @@ mod timer;
 
 use clap::Parser;
 use cli::Args;
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use error::ZzzError;
 use time::parse_until_target;
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use timer::{TimerOutcome, execute_command, run_pomo_mode, run_sleep_timer, run_stopwatch_timer};
 
 pub fn get_lock_command() -> &'static str {
@@ -186,7 +186,7 @@ fn main() -> Result<(), ZzzError> {
     let args = Args::parse();
 
     if is_background() && !args.no_interaction && !args.quiet {
-        eprintln!("Error: `zzz` TUI mode requires a foreground terminal.");
+        eprintln!("Error: `zzs` TUI mode requires a foreground terminal.");
         eprintln!("Use `--no-interaction` or `--quiet` to run in background.");
         std::process::exit(1);
     }
@@ -202,7 +202,7 @@ fn main() -> Result<(), ZzzError> {
             parse_until_target(until_str)?
         } else {
             eprintln!(
-                "Error: Please specify a duration (e.g. `zzz 10s`), `--until <TIME>`, `--pomo`, or `--stopwatch`."
+                "Error: Please specify a duration (e.g. `zzs 10s`), `--until <TIME>`, `--pomo`, or `--stopwatch`."
             );
             std::process::exit(1);
         };
